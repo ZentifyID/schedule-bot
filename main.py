@@ -1,0 +1,7 @@
+﻿"""Entrypoint for schedule bot CLI."""
+
+from schedule_bot.cli import main
+
+
+if __name__ == "__main__":
+    main()
