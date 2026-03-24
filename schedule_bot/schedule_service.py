@@ -46,6 +46,15 @@ PAIR_NUMBERS = {
 }
 
 MONTHS_RU_BY_NUM = {month_no: month_name for month_name, month_no in MONTHS_RU.items()}
+WEEKDAY_ACCUSATIVE = {
+    "\u043f\u043e\u043d\u0435\u0434\u0435\u043b\u044c\u043d\u0438\u043a": "\u043f\u043e\u043d\u0435\u0434\u0435\u043b\u044c\u043d\u0438\u043a",
+    "\u0432\u0442\u043e\u0440\u043d\u0438\u043a": "\u0432\u0442\u043e\u0440\u043d\u0438\u043a",
+    "\u0441\u0440\u0435\u0434\u0430": "\u0441\u0440\u0435\u0434\u0443",
+    "\u0447\u0435\u0442\u0432\u0435\u0440\u0433": "\u0447\u0435\u0442\u0432\u0435\u0440\u0433",
+    "\u043f\u044f\u0442\u043d\u0438\u0446\u0430": "\u043f\u044f\u0442\u043d\u0438\u0446\u0443",
+    "\u0441\u0443\u0431\u0431\u043e\u0442\u0430": "\u0441\u0443\u0431\u0431\u043e\u0442\u0443",
+    "\u0432\u043e\u0441\u043a\u0440\u0435\u0441\u0435\u043d\u044c\u0435": "\u0432\u043e\u0441\u043a\u0440\u0435\u0441\u0435\u043d\u044c\u0435",
+}
 
 
 def normalize_group(value: str) -> str:
@@ -306,7 +315,8 @@ def _short_teacher_name(full_name: str) -> str:
 
 
 def format_schedule_text_telegram(result: dict[str, Any]) -> str:
-    weekday = html.escape(str(result.get("weekday", "")))
+    weekday_raw = str(result.get("weekday", "")).strip().casefold()
+    weekday = html.escape(WEEKDAY_ACCUSATIVE.get(weekday_raw, weekday_raw))
     week_type = html.escape(str(result.get("week_type", "")))
     group = html.escape(str(result.get("group", "")))
 
