@@ -29,6 +29,11 @@ def parse_args() -> argparse.Namespace:
     bot.add_argument("--timezone", default=os.getenv("BOT_TIMEZONE", "Europe/Saratov"))
     bot.add_argument("--token", default=os.getenv("TELEGRAM_BOT_TOKEN", ""))
     bot.add_argument(
+        "--thread-id",
+        default=os.getenv("TELEGRAM_THREAD_ID", ""),
+        help="Optional fixed Telegram topic id (message_thread_id)",
+    )
+    bot.add_argument(
         "--week1-start-date",
         default=os.getenv("WEEK1_START_DATE", ""),
         help="Optional YYYY-MM-DD where week is numerator; fallback if replacement file missing",
@@ -73,6 +78,7 @@ def main() -> None:
         week1_start = None
         if args.week1_start_date:
             week1_start = dt.datetime.strptime(args.week1_start_date, "%Y-%m-%d").date()
+        forced_thread_id = int(args.thread_id) if str(args.thread_id).strip() else None
 
         run_telegram_bot(
             token=args.token,
@@ -81,4 +87,5 @@ def main() -> None:
             yandex_public_url=args.yandex_public_url,
             timezone=args.timezone,
             fallback_week1_start=week1_start,
+            forced_thread_id=forced_thread_id,
         )

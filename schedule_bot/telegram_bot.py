@@ -49,6 +49,18 @@ def telegram_send_message(token: str, chat_id: int, text: str) -> None:
     telegram_api_request(token, "sendMessage", {"chat_id": chat_id, "text": text})
 
 
+def telegram_send_message_in_topic(
+    token: str,
+    chat_id: int,
+    text: str,
+    message_thread_id: int | None = None,
+) -> None:
+    params: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    if message_thread_id is not None:
+        params["message_thread_id"] = message_thread_id
+    telegram_api_request(token, "sendMessage", params)
+
+
 def build_from_yandex(
     target_date: dt.date,
     base_schedule_path: Path,
@@ -97,6 +109,7 @@ def on_telegram_command(
     group: str,
     yandex_public_url: str,
     fallback_week1_start: dt.date | None,
+    message_thread_id: int | None,
 ) -> None:
     command = text.strip().split()[0].lower()
 
@@ -108,7 +121,7 @@ def on_telegram_command(
             "/date YYYY-MM-DD - \u043d\u0430 \u043d\u0443\u0436\u043d\u0443\u044e \u0434\u0430\u0442\u0443\n"
             "\u0422\u0430\u043a\u0436\u0435 \u043f\u043e\u0434\u0434\u0435\u0440\u0436\u0438\u0432\u0430\u044e\u0442\u0441\u044f: YYYY.MM.DD, DD.MM.YYYY"
         )
-        telegram_send_message(token, chat_id, msg)
+        telegram_send_message_in_topic(token, chat_id, msg, message_thread_id=message_thread_id)
         return
 
     if command == "/today":
@@ -118,15 +131,30 @@ def on_telegram_command(
     elif command == "/date":
         parts = text.strip().split()
         if len(parts) != 2:
-            telegram_send_message(token, chat_id, "Format: /date YYYY-MM-DD (also YYYY.MM.DD, DD.MM.YYYY)")
+            telegram_send_message_in_topic(
+                token,
+                chat_id,
+                "Format: /date YYYY-MM-DD (also YYYY.MM.DD, DD.MM.YYYY)",
+                message_thread_id=message_thread_id,
+            )
             return
         try:
             target_date = parse_flexible_date(parts[1])
         except ValueError:
-            telegram_send_message(token, chat_id, "Date format must be YYYY-MM-DD (or YYYY.MM.DD, DD.MM.YYYY)")
+            telegram_send_message_in_topic(
+                token,
+                chat_id,
+                "Date format must be YYYY-MM-DD (or YYYY.MM.DD, DD.MM.YYYY)",
+                message_thread_id=message_thread_id,
+            )
             return
     else:
-        telegram_send_message(token, chat_id, "Unknown command. Use /help")
+        telegram_send_message_in_topic(
+            token,
+            chat_id,
+            "Unknown command. Use /help",
+            message_thread_id=message_thread_id,
+        )
         return
 
     try:
@@ -139,14 +167,20 @@ def on_telegram_command(
         )
         title = f"\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043d\u0430 {target_date.isoformat()}"
         text_out = format_schedule_text(result, title=title)
-        telegram_send_message(token, chat_id, f"{text_out}\n\n{note}")
+        telegram_send_message_in_topic(
+            token,
+            chat_id,
+            f"{text_out}\n\n{note}",
+            message_thread_id=message_thread_id,
+        )
     except Exception:
         print("[ERROR] Failed to handle command:")
         print(traceback.format_exc())
-        telegram_send_message(
+        telegram_send_message_in_topic(
             token,
             chat_id,
             "\u041d\u0435 \u0443\u0434\u0430\u043b\u043e\u0441\u044c \u043f\u043e\u043b\u0443\u0447\u0438\u0442\u044c \u0440\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435. \u041f\u043e\u043f\u0440\u043e\u0431\u0443\u0439 \u0435\u0449\u0435 \u0440\u0430\u0437 \u0447\u0443\u0442\u044c \u043f\u043e\u0437\u0436\u0435.",
+            message_thread_id=message_thread_id,
         )
 
 
@@ -169,6 +203,7 @@ def run_telegram_bot(
     yandex_public_url: str,
     timezone: str,
     fallback_week1_start: dt.date | None,
+    forced_thread_id: int | None = None,
 ) -> None:
     tz = _resolve_timezone(timezone)
     offset: int | None = None
@@ -185,6 +220,8 @@ def run_telegram_bot(
                 text = message.get("text")
                 if not chat_id or not text:
                     continue
+                incoming_thread_id = message.get("message_thread_id")
+                outgoing_thread_id = forced_thread_id if forced_thread_id is not None else incoming_thread_id
 
                 on_telegram_command(
                     token=token,
@@ -195,6 +232,7 @@ def run_telegram_bot(
                     group=group,
                     yandex_public_url=yandex_public_url,
                     fallback_week1_start=fallback_week1_start,
+                    message_thread_id=outgoing_thread_id,
                 )
         except urllib.error.URLError as exc:
             print(f"Network error: {exc}. Retry in 5 sec.")
