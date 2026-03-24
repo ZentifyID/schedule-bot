@@ -64,20 +64,26 @@ def build_from_yandex(
         note = "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0437\u0430\u043c\u0435\u043d: " + str(file_item.get("name", "docx"))
         return result, note
 
-    if fallback_week1_start is None:
-        date_text = target_date.strftime("%d.%m.%Y")
-        raise FileNotFoundError(
-            f"\u041d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d \u0444\u0430\u0439\u043b \u0437\u0430\u043c\u0435\u043d \u043d\u0430 \u0434\u0430\u0442\u0443 {date_text}."
+    if fallback_week1_start is not None:
+        delta_weeks = (target_date - fallback_week1_start).days // 7
+        week_type = RU_NUMERATOR if delta_weeks % 2 == 0 else RU_DENOMINATOR
+        suffix = f" ({fallback_week1_start.isoformat()})."
+    else:
+        # No anchor date provided. Use ISO week parity as a best-effort fallback:
+        # odd week -> numerator, even week -> denominator.
+        iso_week = target_date.isocalendar().week
+        week_type = RU_NUMERATOR if iso_week % 2 == 1 else RU_DENOMINATOR
+        suffix = (
+            ". \u041d\u0435\u0434\u0435\u043b\u044f \u043e\u043f\u0440\u0435\u0434\u0435\u043b\u0435\u043d\u0430 \u043f\u043e ISO-\u043f\u0430\u0440\u0438\u0442\u0435\u0442\u0443 "
+            f"(\u043d\u0435\u0434\u0435\u043b\u044f {iso_week})."
         )
 
-    delta_weeks = (target_date - fallback_week1_start).days // 7
-    week_type = RU_NUMERATOR if delta_weeks % 2 == 0 else RU_DENOMINATOR
     result = build_base_only_schedule(target_date, base_schedule_path, group, week_type)
     note = (
         "\u0424\u0430\u0439\u043b \u0437\u0430\u043c\u0435\u043d \u043d\u0435 \u043d\u0430\u0439\u0434\u0435\u043d, "
         "\u043f\u043e\u043a\u0430\u0437\u0430\u043d\u043e \u0442\u043e\u043b\u044c\u043a\u043e \u0431\u0430\u0437\u043e\u0432\u043e\u0435 "
-        "\u0440\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 "
-        f"({fallback_week1_start.isoformat()})."
+        "\u0440\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435"
+        f"{suffix}"
     )
     return result, note
 

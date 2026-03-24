@@ -141,6 +141,24 @@ def parse_replacements(root: ET.Element, target_group: str) -> list[dict[str, st
     return items
 
 
+def parse_replacement_target(value: str) -> tuple[str, str]:
+    """Parse replacement cell like 'Иванов И.И.(Математика)' into teacher and subject."""
+    text = re.sub(r"\s+", " ", value).strip()
+    if not text:
+        return "", ""
+
+    if text.casefold() == RU_NO:
+        return "", RU_NO
+
+    match = re.match(r"^\s*(.*?)\s*\((.+)\)\s*$", text)
+    if not match:
+        return "", text
+
+    teacher = match.group(1).strip()
+    subject = match.group(2).strip()
+    return teacher, subject
+
+
 def load_base_schedule(path: Path, group: str) -> dict[str, Any]:
     with path.open("r", encoding="utf-8-sig") as fh:
         data = json.load(fh)
@@ -175,18 +193,22 @@ def apply_replacements(
         item["replacement"] = repl
         item["status"] = "cancelled" if repl["to"].strip().casefold() == RU_NO else "replaced"
         if item["status"] == "replaced":
-            item["subject"] = repl["to"]
+            new_teacher, new_subject = parse_replacement_target(repl["to"])
+            item["subject"] = new_subject or repl["to"]
+            # Important: do not keep original teacher on replaced lesson.
+            item["teacher"] = new_teacher
         if repl["room"] and repl["room"] != "-":
             item["room"] = repl["room"]
 
     for pair_key, repl in by_pair.items():
         if pair_key in seen:
             continue
+        new_teacher, new_subject = parse_replacement_target(repl["to"])
         result.append(
             {
                 "pair": repl["pair"],
-                "subject": repl["to"],
-                "teacher": "",
+                "subject": new_subject or repl["to"],
+                "teacher": new_teacher,
                 "room": repl["room"],
                 "status": "replacement_only",
                 "replacement": repl,
