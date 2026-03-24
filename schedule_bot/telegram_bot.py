@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import datetime as dt
+import html
 import json
 import time
 import traceback
@@ -18,7 +19,7 @@ from .schedule_service import (
     build_base_only_schedule,
     build_final_schedule_from_root,
     extract_xml_root_from_docx_bytes,
-    format_schedule_text,
+    format_schedule_text_telegram,
     parse_flexible_date,
 )
 from .yandex_disk import find_replacement_docx_for_date, yandex_download_docx
@@ -55,7 +56,7 @@ def telegram_send_message_in_topic(
     text: str,
     message_thread_id: int | None = None,
 ) -> None:
-    params: dict[str, Any] = {"chat_id": chat_id, "text": text}
+    params: dict[str, Any] = {"chat_id": chat_id, "text": text, "parse_mode": "HTML"}
     if message_thread_id is not None:
         params["message_thread_id"] = message_thread_id
     telegram_api_request(token, "sendMessage", params)
@@ -73,7 +74,7 @@ def build_from_yandex(
         docx_bytes = yandex_download_docx(yandex_public_url, file_item)
         root = extract_xml_root_from_docx_bytes(docx_bytes)
         result = build_final_schedule_from_root(root, base_schedule_path, group)
-        note = "\u0418\u0441\u0442\u043e\u0447\u043d\u0438\u043a \u0437\u0430\u043c\u0435\u043d: " + str(file_item.get("name", "docx"))
+        note = ""
         return result, note
 
     if fallback_week1_start is not None:
@@ -165,14 +166,10 @@ def on_telegram_command(
             yandex_public_url=yandex_public_url,
             fallback_week1_start=fallback_week1_start,
         )
-        title = f"\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043d\u0430 {target_date.isoformat()}"
-        text_out = format_schedule_text(result, title=title)
-        telegram_send_message_in_topic(
-            token,
-            chat_id,
-            f"{text_out}\n\n{note}",
-            message_thread_id=message_thread_id,
-        )
+        text_out = format_schedule_text_telegram(result)
+        if note:
+            text_out = f"{text_out}\n\n{html.escape(note)}"
+        telegram_send_message_in_topic(token, chat_id, text_out, message_thread_id=message_thread_id)
     except Exception:
         print("[ERROR] Failed to handle command:")
         print(traceback.format_exc())

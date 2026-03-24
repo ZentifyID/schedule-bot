@@ -5,6 +5,7 @@ from __future__ import annotations
 import copy
 import csv
 import datetime as dt
+import html
 import io
 import json
 import re
@@ -23,6 +24,28 @@ from .constants import (
     WEEKDAYS_WORKING,
     W_NS,
 )
+
+PAIR_TIMES = {
+    "I": "08:00-09:30",
+    "II": "09:40-11:10",
+    "III": "11:20-12:50",
+    "IV": "13:20-14:50",
+    "V": "15:00-16:30",
+    "VI": "16:40-18:10",
+    "VII": "18:20-19:50",
+}
+
+PAIR_NUMBERS = {
+    "I": "1",
+    "II": "2",
+    "III": "3",
+    "IV": "4",
+    "V": "5",
+    "VI": "6",
+    "VII": "7",
+}
+
+MONTHS_RU_BY_NUM = {month_no: month_name for month_name, month_no in MONTHS_RU.items()}
 
 
 def normalize_group(value: str) -> str:
@@ -268,6 +291,75 @@ def build_base_only_schedule(
         "raw_replacements": [],
         "source": "base",
     }
+
+
+def _short_teacher_name(full_name: str) -> str:
+    if not full_name:
+        return ""
+    chunks = [chunk.strip() for chunk in full_name.split("/") if chunk.strip()]
+    surnames: list[str] = []
+    for chunk in chunks:
+        first = re.split(r"\s+", chunk)[0].strip(".,")
+        if first:
+            surnames.append(first)
+    return " / ".join(surnames)
+
+
+def format_schedule_text_telegram(result: dict[str, Any]) -> str:
+    weekday = html.escape(str(result.get("weekday", "")))
+    week_type = html.escape(str(result.get("week_type", "")))
+    group = html.escape(str(result.get("group", "")))
+
+    date_label = ""
+    date_raw = result.get("date")
+    if isinstance(date_raw, str):
+        try:
+            parsed_date = dt.date.fromisoformat(date_raw)
+            month_name = MONTHS_RU_BY_NUM.get(parsed_date.month, "")
+            date_label = f"<b>{parsed_date.day} {html.escape(month_name)}</b>"
+        except ValueError:
+            date_label = html.escape(date_raw)
+
+    if not date_label:
+        date_label = "(?)"
+
+    header = f"\u0420\u0430\u0441\u043f\u0438\u0441\u0430\u043d\u0438\u0435 \u043d\u0430 {weekday} {date_label} ({week_type}) \u0434\u043b\u044f {group}"
+    lines: list[str] = [header]
+
+    pairs = result.get("pairs", [])
+    if not pairs:
+        lines.append("")
+        lines.append("\u041f\u0430\u0440 \u043d\u0435\u0442")
+        return "\n".join(lines)
+
+    for pair in pairs:
+        pair_key = normalize_pair(str(pair.get("pair", "")))
+        pair_num = PAIR_NUMBERS.get(pair_key, html.escape(str(pair.get("pair", "?"))))
+        pair_time = PAIR_TIMES.get(pair_key, "")
+        pair_line = f"<b>{pair_num})</b>"
+        if pair_time:
+            pair_line += f" <b>{pair_time}</b>"
+
+        subject = html.escape(str(pair.get("subject", "")))
+        teacher = _short_teacher_name(str(pair.get("teacher", "")))
+        room = str(pair.get("room", "")).strip()
+        status = str(pair.get("status", "base"))
+
+        lesson_line = subject
+        if teacher:
+            lesson_line += f" ({html.escape(teacher)})"
+        if room and room != "-":
+            lesson_line += f" - {html.escape(room)}"
+        if status == "replaced":
+            lesson_line += " / \u0417\u0410\u041c\u0415\u041d\u0410"
+        elif status == "cancelled":
+            lesson_line += " / \u041e\u0422\u041c\u0415\u041d\u0410"
+
+        lines.append("")
+        lines.append(pair_line)
+        lines.append(lesson_line)
+
+    return "\n".join(lines)
 
 
 def format_schedule_text(result: dict[str, Any], title: str | None = None) -> str:
