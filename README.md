@@ -100,11 +100,3 @@ sudo systemctl restart schedule-bot
 sudo systemctl status schedule-bot
 sudo journalctl -u schedule-bot -f
 ```
-
-## Безопасность
-- Не храните токен бота в репозитории.
-- Используйте `.env` и переменные окружения.
-- Если токен утек, перевыпустите его через `@BotFather`.
-
-## Лицензия
-Добавьте лицензию (`MIT`, `Apache-2.0` и т.д.) при публикации репозитория.

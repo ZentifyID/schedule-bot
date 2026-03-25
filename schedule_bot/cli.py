@@ -12,6 +12,10 @@ from .schedule_service import build_final_schedule_from_docx_file, build_json_fr
 from .telegram_bot import run_telegram_bot
 
 
+def _parse_bool_env(value: str) -> bool:
+    return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Schedule bot for Telegram + Yandex Disk replacements")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -37,6 +41,31 @@ def parse_args() -> argparse.Namespace:
         "--week1-start-date",
         default=os.getenv("WEEK1_START_DATE", ""),
         help="Optional YYYY-MM-DD where week is numerator; fallback if replacement file missing",
+    )
+    bot.add_argument(
+        "--auto-post-enabled",
+        default=os.getenv("AUTO_POST_ENABLED", "false"),
+        help="Enable hourly auto-check and auto-send when tomorrow replacement file appears",
+    )
+    bot.add_argument(
+        "--auto-post-chat-id",
+        default=os.getenv("AUTO_POST_CHAT_ID", ""),
+        help="Telegram chat id for auto-posting (group id)",
+    )
+    bot.add_argument(
+        "--auto-post-thread-id",
+        default=os.getenv("AUTO_POST_THREAD_ID", os.getenv("TELEGRAM_THREAD_ID", "")),
+        help="Optional topic id for auto-posting",
+    )
+    bot.add_argument(
+        "--auto-post-interval-min",
+        default=os.getenv("AUTO_POST_INTERVAL_MIN", "60"),
+        help="Auto-check interval in minutes (default: 60)",
+    )
+    bot.add_argument(
+        "--auto-post-state-file",
+        default=os.getenv("AUTO_POST_STATE_FILE", ".auto_post_state.json"),
+        help="Path to state file that prevents duplicate auto-posts",
     )
 
     csv_cmd = sub.add_parser("csv-to-json", help="Convert base CSV to JSON format")
@@ -79,6 +108,10 @@ def main() -> None:
         if args.week1_start_date:
             week1_start = dt.datetime.strptime(args.week1_start_date, "%Y-%m-%d").date()
         forced_thread_id = int(args.thread_id) if str(args.thread_id).strip() else None
+        auto_post_enabled = _parse_bool_env(args.auto_post_enabled)
+        auto_post_chat_id = int(args.auto_post_chat_id) if str(args.auto_post_chat_id).strip() else None
+        auto_post_thread_id = int(args.auto_post_thread_id) if str(args.auto_post_thread_id).strip() else None
+        auto_post_interval_seconds = max(int(args.auto_post_interval_min), 1) * 60
 
         run_telegram_bot(
             token=args.token,
@@ -88,4 +121,9 @@ def main() -> None:
             timezone=args.timezone,
             fallback_week1_start=week1_start,
             forced_thread_id=forced_thread_id,
+            auto_post_enabled=auto_post_enabled,
+            auto_post_chat_id=auto_post_chat_id,
+            auto_post_thread_id=auto_post_thread_id,
+            auto_post_interval_seconds=auto_post_interval_seconds,
+            auto_post_state_path=Path(args.auto_post_state_file),
         )

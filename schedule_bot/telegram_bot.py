@@ -20,6 +20,7 @@ from .schedule_service import (
     build_final_schedule_from_root,
     extract_xml_root_from_docx_bytes,
     format_schedule_text_telegram,
+    load_base_schedule,
     parse_flexible_date,
 )
 from .yandex_disk import find_replacement_docx_for_date, yandex_download_docx
@@ -193,6 +194,71 @@ def _resolve_timezone(timezone: str) -> dt.tzinfo:
         return fallback
 
 
+def _load_autopost_state(path: Path) -> dict[str, Any]:
+    if not path.exists():
+        return {}
+    try:
+        with path.open("r", encoding="utf-8-sig") as fh:
+            data = json.load(fh)
+            if isinstance(data, dict):
+                return data
+    except Exception:
+        print(f"[WARN] Failed to read autopost state from {path}. Resetting state.")
+    return {}
+
+
+def _save_autopost_state(path: Path, state: dict[str, Any]) -> None:
+    try:
+        with path.open("w", encoding="utf-8") as fh:
+            json.dump(state, fh, ensure_ascii=False, indent=2)
+    except Exception:
+        print("[WARN] Failed to save autopost state.")
+        print(traceback.format_exc())
+
+
+def _autopost_fingerprint(file_item: dict[str, Any]) -> str:
+    name = str(file_item.get("name", ""))
+    modified = str(file_item.get("modified", ""))
+    path = str(file_item.get("path", ""))
+    return f"{name}|{modified}|{path}"
+
+
+def _auto_send_tomorrow_if_ready(
+    token: str,
+    tz: dt.tzinfo,
+    base_schedule_path: Path,
+    group: str,
+    yandex_public_url: str,
+    chat_id: int,
+    thread_id: int | None,
+    state_path: Path,
+) -> None:
+    now = dt.datetime.now(tz=tz)
+    tomorrow = (now + dt.timedelta(days=1)).date()
+    file_item = find_replacement_docx_for_date(yandex_public_url, tomorrow)
+    if not file_item:
+        return
+
+    date_key = tomorrow.isoformat()
+    fingerprint = _autopost_fingerprint(file_item)
+    state = _load_autopost_state(state_path)
+    sent_map = state.get("sent", {}) if isinstance(state.get("sent"), dict) else {}
+    if sent_map.get(date_key) == fingerprint:
+        return
+
+    docx_bytes = yandex_download_docx(yandex_public_url, file_item)
+    root = extract_xml_root_from_docx_bytes(docx_bytes)
+    result = build_final_schedule_from_root(root, base_schedule_path, group)
+    text_out = format_schedule_text_telegram(result)
+    text_out = f"{text_out}\n\n\u0410\u0432\u0442\u043e\u043e\u0442\u043f\u0440\u0430\u0432\u043a\u0430: \u043d\u0430\u0439\u0434\u0435\u043d \u0444\u0430\u0439\u043b \u0437\u0430\u043c\u0435\u043d \u043d\u0430 \u0437\u0430\u0432\u0442\u0440\u0430."
+    telegram_send_message_in_topic(token, chat_id, text_out, message_thread_id=thread_id)
+
+    sent_map[date_key] = fingerprint
+    state["sent"] = sent_map
+    _save_autopost_state(state_path, state)
+    print(f"[AUTO] Sent tomorrow schedule for {date_key} using {file_item.get('name')}.")
+
+
 def run_telegram_bot(
     token: str,
     base_schedule_path: Path,
@@ -201,9 +267,21 @@ def run_telegram_bot(
     timezone: str,
     fallback_week1_start: dt.date | None,
     forced_thread_id: int | None = None,
+    auto_post_enabled: bool = False,
+    auto_post_chat_id: int | None = None,
+    auto_post_thread_id: int | None = None,
+    auto_post_interval_seconds: int = 3600,
+    auto_post_state_path: Path | None = None,
 ) -> None:
     tz = _resolve_timezone(timezone)
     offset: int | None = None
+    last_auto_check_ts = 0.0
+    state_path = auto_post_state_path or Path(".auto_post_state.json")
+
+    # Fail fast for bad config.
+    load_base_schedule(base_schedule_path, group)
+    if auto_post_enabled and auto_post_chat_id is None:
+        raise ValueError("AUTO_POST is enabled but chat id is not configured")
 
     print("Bot started. Polling Telegram updates...")
     while True:
@@ -231,6 +309,21 @@ def run_telegram_bot(
                     fallback_week1_start=fallback_week1_start,
                     message_thread_id=outgoing_thread_id,
                 )
+
+            if auto_post_enabled:
+                now_ts = time.time()
+                if now_ts - last_auto_check_ts >= max(auto_post_interval_seconds, 60):
+                    _auto_send_tomorrow_if_ready(
+                        token=token,
+                        tz=tz,
+                        base_schedule_path=base_schedule_path,
+                        group=group,
+                        yandex_public_url=yandex_public_url,
+                        chat_id=auto_post_chat_id,
+                        thread_id=auto_post_thread_id if auto_post_thread_id is not None else forced_thread_id,
+                        state_path=state_path,
+                    )
+                    last_auto_check_ts = now_ts
         except urllib.error.URLError as exc:
             print(f"Network error: {exc}. Retry in 5 sec.")
             time.sleep(5)
